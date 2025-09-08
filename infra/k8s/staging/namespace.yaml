@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fintwin-staging
+  labels:
+    name: fintwin-staging
+    environment: staging
+    app: fintwin

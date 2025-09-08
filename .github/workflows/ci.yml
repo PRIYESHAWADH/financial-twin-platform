@@ -1,0 +1,373 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  # Frontend Tests
+  frontend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run linting
+      run: npm run lint
+    
+    - name: Run type checking
+      run: npm run type-check
+    
+    - name: Run tests
+      run: npm run test:coverage
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./frontend/coverage/lcov.info
+        flags: frontend
+        name: frontend-coverage
+
+  # Backend Tests
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fintwin_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: backend/package-lock.json
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Setup test database
+      run: |
+        npm run db:generate
+        npm run migration:run
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fintwin_test
+    
+    - name: Run linting
+      run: npm run lint
+    
+    - name: Run type checking
+      run: npx tsc --noEmit
+    
+    - name: Run tests
+      run: npm run test:cov
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fintwin_test
+        JWT_SECRET: test-secret
+        NODE_ENV: test
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage/lcov.info
+        flags: backend
+        name: backend-coverage
+
+  # ML Tests
+  ml-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./ml
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+    
+    - name: Run linting
+      run: |
+        pip install flake8 black
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        black --check .
+    
+    - name: Run tests
+      run: |
+        pytest --cov=. --cov-report=xml --cov-report=term-missing
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./ml/coverage.xml
+        flags: ml
+        name: ml-coverage
+
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Build and Test Docker Images
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [frontend-tests, backend-tests, ml-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        push: false
+        tags: fintwin-frontend:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: false
+        tags: fintwin-backend:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build ML image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./ml
+        push: false
+        tags: fintwin-ml:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # Integration Tests
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Start services with Docker Compose
+      run: |
+        docker-compose -f docker-compose.test.yml up -d
+        sleep 30
+    
+    - name: Wait for services to be ready
+      run: |
+        timeout 60 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done'
+    
+    - name: Run integration tests
+      run: |
+        npm install -g newman
+        newman run tests/integration/api-tests.postman_collection.json \
+          --environment tests/integration/test-environment.json \
+          --reporters cli,json \
+          --reporter-json-export results.json
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: integration-test-results
+        path: results.json
+    
+    - name: Stop services
+      if: always()
+      run: docker-compose -f docker-compose.test.yml down
+
+  # Deploy to Staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [integration-tests]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    
+    - name: Build and push images to ECR
+      run: |
+        # Build and push frontend
+        docker build -t $ECR_REGISTRY/fintwin-frontend:staging ./frontend
+        docker push $ECR_REGISTRY/fintwin-frontend:staging
+        
+        # Build and push backend
+        docker build -t $ECR_REGISTRY/fintwin-backend:staging ./backend
+        docker push $ECR_REGISTRY/fintwin-backend:staging
+        
+        # Build and push ML service
+        docker build -t $ECR_REGISTRY/fintwin-ml:staging ./ml
+        docker push $ECR_REGISTRY/fintwin-ml:staging
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+    
+    - name: Deploy to EKS
+      run: |
+        aws eks update-kubeconfig --region ap-south-1 --name fintwin-staging
+        kubectl apply -f infra/k8s/staging/
+        kubectl rollout restart deployment/fintwin-frontend -n fintwin-staging
+        kubectl rollout restart deployment/fintwin-backend -n fintwin-staging
+        kubectl rollout restart deployment/fintwin-ml -n fintwin-staging
+
+  # Deploy to Production
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [integration-tests]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    
+    - name: Build and push images to ECR
+      run: |
+        # Build and push frontend
+        docker build -t $ECR_REGISTRY/fintwin-frontend:latest ./frontend
+        docker build -t $ECR_REGISTRY/fintwin-frontend:$GITHUB_SHA ./frontend
+        docker push $ECR_REGISTRY/fintwin-frontend:latest
+        docker push $ECR_REGISTRY/fintwin-frontend:$GITHUB_SHA
+        
+        # Build and push backend
+        docker build -t $ECR_REGISTRY/fintwin-backend:latest ./backend
+        docker build -t $ECR_REGISTRY/fintwin-backend:$GITHUB_SHA ./backend
+        docker push $ECR_REGISTRY/fintwin-backend:latest
+        docker push $ECR_REGISTRY/fintwin-backend:$GITHUB_SHA
+        
+        # Build and push ML service
+        docker build -t $ECR_REGISTRY/fintwin-ml:latest ./ml
+        docker build -t $ECR_REGISTRY/fintwin-ml:$GITHUB_SHA ./ml
+        docker push $ECR_REGISTRY/fintwin-ml:latest
+        docker push $ECR_REGISTRY/fintwin-ml:$GITHUB_SHA
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+    
+    - name: Deploy to EKS
+      run: |
+        aws eks update-kubeconfig --region ap-south-1 --name fintwin-production
+        kubectl apply -f infra/k8s/production/
+        kubectl set image deployment/fintwin-frontend frontend=$ECR_REGISTRY/fintwin-frontend:$GITHUB_SHA -n fintwin-production
+        kubectl set image deployment/fintwin-backend backend=$ECR_REGISTRY/fintwin-backend:$GITHUB_SHA -n fintwin-production
+        kubectl set image deployment/fintwin-ml ml=$ECR_REGISTRY/fintwin-ml:$GITHUB_SHA -n fintwin-production
+        kubectl rollout status deployment/fintwin-frontend -n fintwin-production
+        kubectl rollout status deployment/fintwin-backend -n fintwin-production
+        kubectl rollout status deployment/fintwin-ml -n fintwin-production
+
+  # Notify on completion
+  notify:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Notify Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      if: always()

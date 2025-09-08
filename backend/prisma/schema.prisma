@@ -1,0 +1,331 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// pgvector extension will be enabled via SQL
+// No additional generators needed
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  phone         String    @unique
+  password      String
+  firstName     String
+  lastName      String
+  pan           String    @unique
+  address       String?
+  city          String?
+  state         String?
+  pincode       String?
+  dateOfBirth   DateTime?
+  role          UserRole  @default(USER)
+  isActive      Boolean   @default(true)
+  isVerified    Boolean   @default(false)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  financialData     FinancialData[]
+  aiInsights        AIInsight[]
+  consents          Consent[]
+  auditLogs         AuditLog[]
+  clientRelationships ClientRelationship[]
+  caRatings         CARating[]
+  dataIngestions    DataIngestion[]
+  otps              OTP[]
+
+  @@map("users")
+}
+
+model CA {
+  id                String      @id @default(cuid())
+  icaiMemberId      String      @unique
+  email             String      @unique
+  phone             String      @unique
+  password          String?
+  firstName         String
+  lastName          String
+  pan               String      @unique
+  address           String?
+  city              String?
+  state             String?
+  pincode           String?
+  services          CAServiceType[]
+  experience        Int
+  qualifications    String[]
+  languages         String[]
+  consultationFee   Int
+  availability      String?
+  rating            Float?
+  status            CAStatus    @default(PENDING_VERIFICATION)
+  isVerified        Boolean     @default(false)
+  isActive          Boolean     @default(true)
+  verificationData  Json?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  // Relations
+  clientRelationships ClientRelationship[]
+  caRatings         CARating[]
+
+  @@map("cas")
+}
+
+model FinancialData {
+  id            String    @id @default(cuid())
+  userId        String
+  dataType      String
+  rawData       Json
+  processedData Json
+  source        String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dataIngestion DataIngestion?
+
+  @@map("financial_data")
+}
+
+model AIInsight {
+  id                String           @id @default(cuid())
+  userId            String
+  insightType       AIInsightType
+  priority          AIInsightPriority
+  title             String
+  description       String
+  recommendation    String
+  confidence        Float
+  actionable        Boolean          @default(true)
+  isRead            Boolean          @default(false)
+  readAt            DateTime?
+  estimatedSavings  Int?
+  deadline          String?
+  citations         String[]
+  metadata          Json?
+  generatedAt       DateTime         @default(now())
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  // Relations
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_insights")
+}
+
+model Consent {
+  id                  String        @id @default(cuid())
+  userId              String
+  consentType         ConsentType
+  consentArtefact     Json
+  status              ConsentStatus @default(ACTIVE)
+  grantedAt           DateTime      @default(now())
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  dataRetentionPeriod Int           @default(1)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  // Relations
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("consents")
+}
+
+model AuditLog {
+  id            String    @id @default(cuid())
+  userId        String
+  action        String
+  resource      String
+  details       Json?
+  ipAddress     String?
+  userAgent     String?
+  previousHash  String?
+  currentHash   String
+  hashChain     String
+  createdAt     DateTime  @default(now())
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
+
+model ClientRelationship {
+  id          String                    @id @default(cuid())
+  userId      String
+  caId        String
+  services    String[]
+  startDate   DateTime
+  endDate     DateTime?
+  terms       String
+  fee         Int
+  status      ClientRelationshipStatus  @default(PENDING)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  // Relations
+  user        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ca          CA                        @relation(fields: [caId], references: [id], onDelete: Cascade)
+
+  @@map("client_relationships")
+}
+
+model CARating {
+  id        String    @id @default(cuid())
+  userId    String
+  caId      String
+  rating    Int
+  review    String?
+  createdAt DateTime  @default(now())
+
+  // Relations
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ca        CA        @relation(fields: [caId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, caId])
+  @@map("ca_ratings")
+}
+
+model DataIngestion {
+  id              String                @id @default(cuid())
+  userId          String
+  source          DataSource
+  dataType        String
+  status          DataIngestionStatus   @default(PENDING)
+  metadata        Json?
+  financialDataId String?               @unique
+  errorMessage    String?
+  processedAt     DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  // Relations
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  financialData   FinancialData?        @relation(fields: [financialDataId], references: [id])
+
+  @@map("data_ingestions")
+}
+
+model OTP {
+  id        String    @id @default(cuid())
+  userId    String
+  otp       String
+  type      OTPType
+  expiresAt DateTime
+  isUsed    Boolean   @default(false)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  // Relations
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("otps")
+}
+
+model VectorEmbedding {
+  id        String   @id @default(cuid())
+  content   String
+  embedding String   // Will store as text, converted to vector in application
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("vector_embeddings")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum CAServiceType {
+  TAX_FILING
+  GST_FILING
+  AUDIT
+  CONSULTATION
+  COMPLIANCE
+  BOOKKEEPING
+  FINANCIAL_PLANNING
+}
+
+enum CAStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+  SUSPENDED
+}
+
+enum AIInsightType {
+  TAX_OPTIMIZATION
+  EXPENSE_ANALYSIS
+  INVESTMENT_ADVICE
+  CASH_FLOW_ANALYSIS
+  RISK_ASSESSMENT
+  BUDGET_RECOMMENDATION
+  DEBT_MANAGEMENT
+  INSURANCE_ADVICE
+}
+
+enum AIInsightPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ConsentType {
+  ACCOUNT_AGGREGATOR
+  DATA_PROCESSING
+  AI_ANALYSIS
+  THIRD_PARTY_SHARING
+  MARKETING
+}
+
+enum ConsentStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum ClientRelationshipStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum DataSource {
+  FILE_UPLOAD
+  ACCOUNT_AGGREGATOR
+  API_INTEGRATION
+  MANUAL_ENTRY
+  BANK_API
+  INVESTMENT_API
+  TAX_API
+}
+
+enum DataIngestionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum OTPType {
+  EMAIL_VERIFICATION
+  PHONE_VERIFICATION
+  PASSWORD_RESET
+  TWO_FACTOR_AUTH
+}
