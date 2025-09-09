@@ -284,20 +284,24 @@ config.local.*
 test-results/
 coverage/
 
-# ML model files (if large)
-*.pkl
-*.joblib
-*.h5
-*.hdf5
-models/
+# ML model files (if large) - but keep important ones
+# *.pkl
+# *.joblib
+# *.h5
+# *.hdf5
+# models/
 
-# Data files (if large)
-data/
-*.csv
-*.json
-*.parquet
+# Data files (if large) - but keep important ones
+# data/
+# *.csv
+# *.json
+# *.parquet
 !package.json
 !tsconfig.json
 !jest.config.js
 !next.config.js
 !tailwind.config.js
+!**/package.json
+!**/tsconfig.json
+!**/*.config.js
+!**/*.config.ts

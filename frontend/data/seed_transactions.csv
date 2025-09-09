@@ -1,0 +1,21 @@
+﻿description,amount,category,merchant,payment_method,date
+"Zomato Order - Lunch",450.00,Food & Dining,zomato,online,2024-01-15 12:30:00
+"Uber Ride to Office",120.00,Transportation,uber,online,2024-01-15 08:45:00
+"Amazon Purchase - Electronics",2500.00,Shopping,amazon,online,2024-01-14 15:20:00
+"Electricity Bill Payment",1800.00,Utilities,mseb,online,2024-01-14 10:00:00
+"Salary Credit",52000.00,Income,company_xyz,transfer,2024-01-01 09:00:00
+"Netflix Subscription",499.00,Entertainment,netflix,online,2024-01-13 20:15:00
+"Petrol Station",1500.00,Transportation,hp_petrol,card,2024-01-13 18:30:00
+"Starbucks Coffee",280.00,Food & Dining,starbucks,card,2024-01-12 07:45:00
+"Grocery Shopping",3200.00,Food & Dining,dmart,card,2024-01-12 19:00:00
+"Mobile Bill Payment",599.00,Utilities,jio,online,2024-01-11 14:20:00
+"Book Purchase - Amazon",850.00,Education,amazon,online,2024-01-10 16:45:00
+"Medical Checkup",2500.00,Healthcare,max_hospital,card,2024-01-09 11:30:00
+"Movie Tickets",600.00,Entertainment,pvr,online,2024-01-08 20:00:00
+"Online Course Fee",2999.00,Education,coursera,online,2024-01-07 13:15:00
+"Home Loan EMI",15000.00,Housing,hdfc_bank,transfer,2024-01-05 10:00:00
+"Mutual Fund SIP",5000.00,Investments,sbi_mutual_fund,online,2024-01-04 15:30:00
+"Life Insurance Premium",2500.00,Insurance,lic,online,2024-01-03 12:00:00
+"Restaurant Dinner",1200.00,Food & Dining,dominos,card,2024-01-02 21:00:00
+"Office Supplies",1500.00,Business,stationery_shop,card,2024-01-01 17:30:00
+"Freelance Payment",15000.00,Income,client_xyz,transfer,2024-01-01 14:00:00
