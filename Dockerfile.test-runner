@@ -1,0 +1,29 @@
+FROM node:18-alpine
+
+# Install Python and other dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    curl \
+    bash
+
+# Install Newman for API testing
+RUN npm install -g newman
+
+# Install Python testing dependencies
+RUN pip3 install pytest pytest-cov
+
+WORKDIR /workspace
+
+# Copy test files
+COPY tests/ ./tests/
+COPY package*.json ./
+
+# Install Node.js dependencies for testing
+RUN npm ci
+
+# Create test results directory
+RUN mkdir -p test-results
+
+# Default command
+CMD ["sh", "-c", "echo 'Test runner ready' && tail -f /dev/null"]

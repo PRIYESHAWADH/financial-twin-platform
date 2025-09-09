@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fintwin-ml
+  namespace: fintwin-staging
+  labels:
+    app: fintwin-ml
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fintwin-ml
+  template:
+    metadata:
+      labels:
+        app: fintwin-ml
+    spec:
+      containers:
+      - name: ml-service
+        image: fintwin-ml:staging
+        ports:
+        - containerPort: 8000
+        env:
+        - name: PYTHON_ENV
+          value: "staging"
+        - name: DATABASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: fintwin-config
+              key: DATABASE_URL
+        - name: EMBEDDING_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: fintwin-config
+              key: EMBEDDING_MODEL
+        - name: LLM_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: fintwin-config
+              key: LLM_MODEL
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: fintwin-config
+              key: LOG_LEVEL
+        - name: METRICS_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: fintwin-config
+              key: METRICS_ENABLED
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-service
+  namespace: fintwin-staging
+  labels:
+    app: fintwin-ml
+spec:
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+  selector:
+    app: fintwin-ml
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fintwin-ml-hpa
+  namespace: fintwin-staging
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fintwin-ml
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

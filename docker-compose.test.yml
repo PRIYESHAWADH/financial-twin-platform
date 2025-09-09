@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  # Test Database
+  db-test:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: fintwin_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for testing
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend for testing
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@db-test:5432/fintwin_test
+      REDIS_URL: redis://redis-test:6379
+      JWT_SECRET: test-secret-key
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      db-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: npm run test:e2e
+
+  # Frontend for testing
+  frontend-test:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.test
+    environment:
+      NODE_ENV: test
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run test:ci
+
+  # ML service for testing
+  ml-test:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile.test
+    environment:
+      PYTHON_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@db-test:5432/fintwin_test
+    ports:
+      - "8000:8000"
+    depends_on:
+      db-test:
+        condition: service_healthy
+    volumes:
+      - ./ml:/app
+    command: pytest --cov=. --cov-report=xml
+
+  # Test runner service
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-runner
+    environment:
+      NODE_ENV: test
+      PYTHON_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@db-test:5432/fintwin_test
+      REDIS_URL: redis://redis-test:6379
+      JWT_SECRET: test-secret-key
+    depends_on:
+      db-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      backend-test:
+        condition: service_started
+      frontend-test:
+        condition: service_started
+      ml-test:
+        condition: service_started
+    volumes:
+      - ./:/workspace
+      - test-results:/workspace/test-results
+    command: |
+      sh -c "
+        echo 'Running integration tests...' &&
+        npm install -g newman &&
+        newman run tests/integration/api-tests.postman_collection.json \
+          --environment tests/integration/test-environment.json \
+          --reporters cli,json \
+          --reporter-json-export test-results/integration-results.json &&
+        echo 'All tests completed!'
+      "
+
+volumes:
+  postgres_test_data:
+  test-results:

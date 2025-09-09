@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fintwin-config
+  namespace: fintwin-staging
+data:
+  # Database Configuration
+  DATABASE_URL: "postgresql://fintwin:password@postgres-service:5432/fintwin_staging"
+  REDIS_URL: "redis://redis-service:6379"
+  
+  # Application Configuration
+  NODE_ENV: "staging"
+  PORT: "3001"
+  FRONTEND_URL: "https://staging.fintwin.in"
+  API_URL: "https://api-staging.fintwin.in"
+  
+  # ML Service Configuration
+  ML_SERVICE_URL: "http://ml-service:8000"
+  EMBEDDING_MODEL: "all-MiniLM-L6-v2"
+  LLM_MODEL: "local-llama2"
+  
+  # Security Configuration
+  JWT_SECRET: "staging-jwt-secret-key"
+  ENCRYPTION_KEY: "staging-encryption-key"
+  
+  # External Services
+  AA_SERVICE_URL: "https://aa-staging.fintwin.in"
+  ICAI_API_URL: "https://api-staging.icai.org"
+  GST_API_URL: "https://api-staging.gst.gov.in"
+  
+  # Monitoring
+  LOG_LEVEL: "info"
+  METRICS_ENABLED: "true"
+  
+  # Feature Flags
+  ENABLE_AA_INTEGRATION: "true"
+  ENABLE_ML_INSIGHTS: "true"
+  ENABLE_CA_MARKETPLACE: "true"
+  ENABLE_AUDIT_TRAIL: "true"
